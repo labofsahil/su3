@@ -8,14 +8,6 @@ i2pseeds
 bunx su3 netdb
 ```
 
-## Usage
-
-```typescript
-import { greet } from 'su3';
-
-console.log(greet('World')); // Hello, World!
 ```
-
-## License
-
-MIT
+bunx su3 netdb --refresh
+```
