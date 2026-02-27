@@ -1,0 +1,81 @@
+name: Weekly Release
+
+on:
+  schedule:
+    # Every Monday at 00:00 UTC
+    - cron: '0 0 * * 1'
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    name: Weekly Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Set date version
+        id: version
+        run: |
+          VERSION=$(date -u +'%Y.%m.%d')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          jq --arg v "$VERSION" '.version = $v' package.json > tmp.json && mv tmp.json package.json
+
+      - name: Type check
+        run: bun run type-check
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Run tests
+        run: bun run test
+
+      - name: Build
+        run: bun run build
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit version bump
+        run: |
+          git add package.json
+          git commit -m "release: v${{ steps.version.outputs.version }}" || echo "No changes to commit"
+
+      - name: Create tag and push
+        run: |
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin main --tags
+
+      - name: Generate changelog
+        run: bunx changelogithub
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update npm
+        run: npm install -g npm@latest
+
+      - name: Publish packages to npm
+        run: bun pm pack && npm publish ./*.tgz --access public

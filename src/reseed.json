@@ -1,0 +1,50 @@
+[
+	{
+		"url": "https://reseed.sahil.world/",
+		"crt_file": "sahil_at_mail.i2p.crt"
+	},
+	{
+		"url": "https://i2p.diyarciftci.xyz/",
+		"crt_file": "diyarciftci_at_protonmail.com.crt"
+	},
+	{
+		"url": "https://coconut.incognet.io/",
+		"crt_file": "rambler_at_mail.i2p.crt"
+	},
+	{
+		"url": "https://reseed.stormycloud.org/",
+		"crt_file": "admin_at_stormycloud.org.crt"
+	},
+	{
+		"url": "https://reseed-pl.i2pd.xyz/",
+		"crt_file": "r4sas-reseed_at_mail.i2p.crt"
+	},
+	{
+		"url": "https://reseed-fr.i2pd.xyz/",
+		"crt_file": "r4sas-reseed_at_mail.i2p.crt"
+	},
+	{
+		"url": "https://www2.mk16.de/",
+		"crt_file": "i2p-reseed_at_mk16.de.crt"
+	},
+	{
+		"url": "https://reseed2.i2p.net/",
+		"crt_file": "echelon3_at_mail.i2p.crt"
+	},
+	{
+		"url": "https://reseed.diva.exchange/",
+		"crt_file": "reseed_at_diva.exchange.crt"
+	},
+	{
+		"url": "https://reseed.i2pgit.org/",
+		"crt_file": "hankhill19580_at_gmail.com.crt"
+	},
+	{
+		"url": "https://i2p.novg.net/",
+		"crt_file": "igor_at_novg.net.crt"
+	},
+	{
+		"url": "https://reseed.onion.im/",
+		"crt_file": "lazygravy_at_mail.i2p"
+	}
+]

@@ -1,0 +1,70 @@
+{
+	"name": "su3",
+	"version": "0.1.0",
+	"description": "i2pseeds",
+	"homepage": "https://github.com/labofsahil/su3#readme",
+	"bugs": {
+		"url": "https://github.com/labofsahil/su3/issues"
+	},
+	"license": "MIT",
+	"files": [
+		"dist"
+	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/labofsahil/su3.git"
+	},
+	"scripts": {
+		"prebuild": "bun run scripts/fetch-seeds.ts",
+		"build": "bunup src/index.ts src/cli.ts && cp -r data dist/data && cp -r src/crt dist/crt && cp src/reseed.json dist/data/reseed.json",
+		"dev": "bunup src/index.ts src/cli.ts --watch",
+		"lint": "biome check .",
+		"lint:fix": "biome check --write .",
+		"prepare": "bun simple-git-hooks",
+		"release": "bumpp --commit --push --tag",
+		"test": "bun test",
+		"test:coverage": "bun test --coverage",
+		"test:watch": "bun test --watch",
+		"type-check": "tsc --noEmit",
+		"migrate": "biome migrate --write"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.4",
+		"@types/adm-zip": "^0.5.7",
+		"@types/bun": "^1.3.9",
+		"@types/node": "^25.3.0",
+		"bumpp": "^10.4.1",
+		"bunup": "^0.16.29",
+		"simple-git-hooks": "^2.13.1",
+		"typescript": "^5.9.3"
+	},
+	"peerDependencies": {
+		"typescript": ">=4.5.0"
+	},
+	"peerDependenciesMeta": {
+		"typescript": {
+			"optional": true
+		}
+	},
+	"type": "module",
+	"bin": {
+		"su3": "./dist/cli.js"
+	},
+	"exports": {
+		".": {
+			"import": {
+				"types": "./dist/index.d.ts",
+				"default": "./dist/index.js"
+			}
+		},
+		"./package.json": "./package.json"
+	},
+	"module": "./dist/index.js",
+	"simple-git-hooks": {
+		"pre-commit": "bun run lint && bun run type-check"
+	},
+	"types": "./dist/index.d.ts",
+	"dependencies": {
+		"adm-zip": "^0.5.16"
+	}
+}
