@@ -1,7 +1,21 @@
 {
 	"name": "i2pseeds",
 	"version": "2026.03.01",
-	"description": "i2pseeds",
+	"description": "TypeScript library and CLI for I2P network reseeding — parse SU3 files, verify signatures, and extract router info into netDb",
+	"author": "labofsahil",
+	"keywords": [
+		"i2p",
+		"su3",
+		"reseed",
+		"netdb",
+		"router-info",
+		"privacy",
+		"anonymity",
+		"cryptography",
+		"signature-verification",
+		"i2p-network",
+		"dark-net"
+	],
 	"homepage": "https://github.com/labofsahil/su3#readme",
 	"bugs": {
 		"url": "https://github.com/labofsahil/su3/issues"
