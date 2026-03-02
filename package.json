@@ -30,7 +30,7 @@
 	},
 	"scripts": {
 		"prebuild": "bun run scripts/fetch-seeds.ts",
-		"build": "bunup src/index.ts src/cli.ts && cp -r data dist/data && cp -r src/crt dist/crt && cp src/reseed.json dist/data/reseed.json",
+		"build": "bunup src/index.ts src/cli.ts && node -e \"const fs=require('fs');fs.cpSync('data','dist/data',{recursive:true});fs.cpSync('src/crt','dist/crt',{recursive:true});fs.copyFileSync('src/reseed.json','dist/data/reseed.json')\"",
 		"dev": "bunup src/index.ts src/cli.ts --watch",
 		"lint": "biome check .",
 		"lint:fix": "biome check --write .",
