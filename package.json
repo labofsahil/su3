@@ -1,6 +1,6 @@
 {
 	"name": "i2pseeds",
-	"version": "2026.06.22",
+	"version": "2026.06.29",
 	"description": "TypeScript library and CLI for I2P network reseeding — parse SU3 files, verify signatures, and extract router info into netDb",
 	"author": "labofsahil",
 	"keywords": [
