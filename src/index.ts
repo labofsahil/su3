@@ -8,13 +8,46 @@ import AdmZip from 'adm-zip'
  */
 export const ZIP_MAGIC: Buffer = Buffer.from([0x50, 0x4b, 0x03, 0x04])
 
-/** SU3 signature type → Node.js algorithm name */
-const SIG_ALGORITHMS: Record<number, string> = {
-	3: 'SHA256', // DSA-SHA1 (not used for reseed)
-	4: 'SHA256', // ECDSA-SHA256-P256
-	5: 'SHA384', // ECDSA-SHA384-P384
-	6: 'SHA512', // RSA-SHA512-4096 (most common for reseed)
-	8: 'SHA512', // EdDSA (not standard node crypto, but listed)
+export interface SigTypeDetails {
+	name: string
+	hash: string | null
+	dsaEncoding?: 'ieee-p1363'
+	sigLength: number
+}
+
+/**
+ * Standard I2P SU3 signature types mapping.
+ * Spec: https://geti2p.net/en/docs/spec/updates#signature-details
+ */
+export const SIG_TYPES: Record<number, SigTypeDetails> = {
+	0: {
+		name: 'DSA-SHA1',
+		hash: 'SHA1',
+		dsaEncoding: 'ieee-p1363',
+		sigLength: 40,
+	},
+	1: {
+		name: 'ECDSA-SHA256-P256',
+		hash: 'SHA256',
+		dsaEncoding: 'ieee-p1363',
+		sigLength: 64,
+	},
+	2: {
+		name: 'ECDSA-SHA384-P384',
+		hash: 'SHA384',
+		dsaEncoding: 'ieee-p1363',
+		sigLength: 96,
+	},
+	3: {
+		name: 'ECDSA-SHA512-P521',
+		hash: 'SHA512',
+		dsaEncoding: 'ieee-p1363',
+		sigLength: 132,
+	},
+	4: { name: 'RSA-SHA256-2048', hash: 'SHA256', sigLength: 256 },
+	5: { name: 'RSA-SHA384-3072', hash: 'SHA384', sigLength: 384 },
+	6: { name: 'RSA-SHA512-4096', hash: 'SHA512', sigLength: 512 },
+	8: { name: 'EdDSA-SHA512-Ed25519ph', hash: null, sigLength: 64 },
 }
 
 export interface Su3Header {
@@ -48,8 +81,8 @@ export function parseSu3Header(buf: Buffer): Su3Header | null {
 	const contentLength =
 		buf.readUInt32BE(16) * 0x100000000 + buf.readUInt32BE(20)
 
-	const fileType = buf[25] ?? 0
-	const contentType = buf[27] ?? 0
+	const contentType = buf[25] ?? 0
+	const fileType = buf[27] ?? 0
 
 	const headerEnd = 40
 	const version = buf
@@ -94,8 +127,8 @@ export function verifySu3Signature(
 	const header = parseSu3Header(su3Buffer)
 	if (!header) return false
 
-	const algo = SIG_ALGORITHMS[header.sigType]
-	if (!algo) {
+	const sigTypeDetails = SIG_TYPES[header.sigType]
+	if (!sigTypeDetails) {
 		console.error(`Unknown SU3 signature type: ${header.sigType}`)
 		return false
 	}
@@ -112,13 +145,99 @@ export function verifySu3Signature(
 	)
 
 	try {
-		const verifier = crypto.createVerify(algo)
-		verifier.update(signedData)
-		return verifier.verify(certPem, signature)
+		if (header.sigType === 8) {
+			return crypto.verify(null, signedData, certPem, signature)
+		}
+		const options: crypto.VerifyPublicKeyInput = {
+			key: certPem,
+		}
+		if (sigTypeDetails.dsaEncoding) {
+			options.dsaEncoding = sigTypeDetails.dsaEncoding
+		}
+		return crypto.verify(sigTypeDetails.hash, signedData, options, signature)
 	} catch (err) {
 		console.error('Signature verification error:', err)
 		return false
 	}
+}
+
+export interface CreateSu3Params {
+	content: Buffer
+	version: string
+	signerId: string
+	contentType: number
+	fileType: number
+	sigType: number
+	privateKeyPem: string
+}
+
+/**
+ * Packages and signs content inside a valid SU3 container.
+ */
+export function createSu3(params: CreateSu3Params): Buffer {
+	const sigTypeDetails = SIG_TYPES[params.sigType]
+	if (!sigTypeDetails) {
+		throw new Error(`Unsupported signature type: ${params.sigType}`)
+	}
+
+	const versionBuf = Buffer.alloc(16)
+	versionBuf.write(params.version, 'ascii')
+
+	const signerBuf = Buffer.from(params.signerId, 'utf8')
+
+	// Header is 40 bytes
+	const header = Buffer.alloc(40)
+	header.write('I2Psu3', 0, 'ascii')
+	header[6] = 0 // reserved
+	header[7] = 0 // file format version
+	header.writeUInt16BE(params.sigType, 8)
+	header.writeUInt16BE(sigTypeDetails.sigLength, 10)
+	header[12] = 0 // reserved
+	header[13] = versionBuf.length // version length
+	header[14] = 0 // reserved
+	header[15] = signerBuf.length // signer ID length
+
+	// Content length is 8 bytes big-endian at offset 16
+	const contentLength = params.content.length
+	header.writeUInt32BE(0, 16)
+	header.writeUInt32BE(contentLength, 20)
+
+	header[24] = 0 // unused
+	header[25] = params.contentType // content type
+	header[26] = 0 // unused
+	header[27] = params.fileType // file type
+
+	const signedData = Buffer.concat([
+		header,
+		versionBuf,
+		signerBuf,
+		params.content,
+	])
+
+	let signature: Buffer
+	if (params.sigType === 8) {
+		signature = crypto.sign(null, signedData, params.privateKeyPem)
+	} else {
+		const options: crypto.SignPrivateKeyInput = {
+			key: params.privateKeyPem,
+		}
+		if (sigTypeDetails.dsaEncoding) {
+			options.dsaEncoding = sigTypeDetails.dsaEncoding
+		}
+		signature = crypto.sign(sigTypeDetails.hash, signedData, options)
+	}
+
+	if (signature.length !== sigTypeDetails.sigLength) {
+		if (signature.length < sigTypeDetails.sigLength) {
+			const padded = Buffer.alloc(sigTypeDetails.sigLength)
+			signature.copy(padded, sigTypeDetails.sigLength - signature.length)
+			signature = padded
+		} else {
+			signature = signature.subarray(0, sigTypeDetails.sigLength)
+		}
+	}
+
+	return Buffer.concat([signedData, signature])
 }
 
 /**

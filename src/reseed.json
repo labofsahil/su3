@@ -45,6 +45,6 @@
 	},
 	{
 		"url": "https://reseed.onion.im/",
-		"crt_file": "lazygravy_at_mail.i2p"
+		"crt_file": "lazygravy_at_mail.i2p.crt"
 	}
 ]

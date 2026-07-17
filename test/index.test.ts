@@ -5,6 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import AdmZip from 'adm-zip'
 import {
+	createSu3,
 	extractNetDb,
 	extractZipFromSu3,
 	parseSu3Header,
@@ -41,8 +42,8 @@ function buildFakeSu3(
 	// content length (8 bytes BE at offset 16)
 	header.writeUInt32BE(0, 16)
 	header.writeUInt32BE(zipBuffer.length, 20)
-	header[25] = 0 // file type
-	header[27] = 3 // content type (reseed)
+	header[25] = 3 // content type (reseed)
+	header[27] = 0 // file type (zip)
 
 	const preContent = Buffer.concat([header, versionBuf, signerBuf])
 	const signedData = Buffer.concat([preContent, zipBuffer])
@@ -405,6 +406,7 @@ describe('parseSu3Header', () => {
 		expect(header?.sigType).toBe(6)
 		expect(header?.sigLength).toBe(512)
 		expect(header?.contentType).toBe(3)
+		expect(header?.fileType).toBe(0)
 	})
 
 	test('returns null for too-short buffer', () => {
@@ -531,5 +533,198 @@ describe('extractNetDb with crtDir', () => {
 		// The unknown signer's file should NOT be in the results
 		const allFiles = result.files.join(',')
 		expect(allFiles).not.toContain('EEEE')
+	})
+})
+
+// ── createSu3 and new signature types verification ───────────────────────────────────
+
+describe('createSu3 and different signature types', () => {
+	test('RSA-SHA256 (type 4)', () => {
+		const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+			modulusLength: 2048,
+		})
+		const privPem = privateKey.export({
+			type: 'pkcs8',
+			format: 'pem',
+		}) as string
+		const pubPem = publicKey.export({ type: 'spki', format: 'pem' }) as string
+
+		const content = Buffer.from('hello world content')
+		const su3 = createSu3({
+			content,
+			version: '1.0.0',
+			signerId: 'rsa-test@mail.i2p',
+			contentType: 3,
+			fileType: 0,
+			sigType: 4,
+			privateKeyPem: privPem,
+		})
+
+		const header = parseSu3Header(su3)
+		expect(header).not.toBeNull()
+		expect(header?.sigType).toBe(4)
+		expect(header?.version).toBe('1.0.0')
+		expect(header?.signerId).toBe('rsa-test@mail.i2p')
+
+		const isValid = verifySu3Signature(su3, pubPem)
+		expect(isValid).toBe(true)
+	})
+
+	test('ECDSA-SHA256-P256 (type 1)', () => {
+		const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', {
+			namedCurve: 'prime256v1',
+		})
+		const privPem = privateKey.export({
+			type: 'pkcs8',
+			format: 'pem',
+		}) as string
+		const pubPem = publicKey.export({ type: 'spki', format: 'pem' }) as string
+
+		const content = Buffer.from('ecdsa payload')
+		const su3 = createSu3({
+			content,
+			version: '2.0.0',
+			signerId: 'ecdsa-test@mail.i2p',
+			contentType: 3,
+			fileType: 0,
+			sigType: 1,
+			privateKeyPem: privPem,
+		})
+
+		const header = parseSu3Header(su3)
+		expect(header).not.toBeNull()
+		expect(header?.sigType).toBe(1)
+
+		const isValid = verifySu3Signature(su3, pubPem)
+		expect(isValid).toBe(true)
+	})
+
+	test('EdDSA-SHA512-Ed25519ph (type 8)', () => {
+		const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519')
+		const privPem = privateKey.export({
+			type: 'pkcs8',
+			format: 'pem',
+		}) as string
+		const pubPem = publicKey.export({ type: 'spki', format: 'pem' }) as string
+
+		const content = Buffer.from('eddsa payload')
+		const su3 = createSu3({
+			content,
+			version: '3.0.0',
+			signerId: 'eddsa-test@mail.i2p',
+			contentType: 3,
+			fileType: 0,
+			sigType: 8,
+			privateKeyPem: privPem,
+		})
+
+		const header = parseSu3Header(su3)
+		expect(header).not.toBeNull()
+		expect(header?.sigType).toBe(8)
+
+		const isValid = verifySu3Signature(su3, pubPem)
+		expect(isValid).toBe(true)
+	})
+})
+
+// ── CLI Expanded Commands ──────────────────────────────────────────────────────────
+
+describe('CLI expanded commands', () => {
+	let cliPath: string
+	let tmpDir: string
+	let keyPem: string
+	let certPem: string
+
+	beforeAll(async () => {
+		cliPath = path.join(import.meta.dir, '..', 'dist', 'cli.js')
+		tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'su3-cli-test-'))
+
+		// Generate test keys for pack/verify/info/extract
+		const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+			modulusLength: 2048,
+		})
+		keyPem = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string
+		certPem = publicKey.export({ type: 'spki', format: 'pem' }) as string
+	})
+
+	afterAll(async () => {
+		await fs.rm(tmpDir, { recursive: true, force: true })
+	})
+
+	test('su3 pack, info, verify, and extract', async () => {
+		try {
+			await fs.access(cliPath)
+		} catch {
+			console.log('Skipping CLI test – dist/cli.js not built yet')
+			return
+		}
+
+		// Write key and payload file
+		const keyPath = path.join(tmpDir, 'test.key')
+		const certPath = path.join(tmpDir, 'test.crt')
+		const contentPath = path.join(tmpDir, 'content.txt')
+		const su3Path = path.join(tmpDir, 'output.su3')
+		const extractedPath = path.join(tmpDir, 'extracted.txt')
+
+		await fs.writeFile(keyPath, keyPem)
+		await fs.writeFile(certPath, certPem)
+		await fs.writeFile(contentPath, 'hello world content')
+
+		// 1. Pack
+		const packProc = Bun.spawn([
+			'node',
+			cliPath,
+			'pack',
+			contentPath,
+			su3Path,
+			'--signerId',
+			'test@mail.i2p',
+			'--privateKey',
+			keyPath,
+			'--version',
+			'1234',
+			'--sigType',
+			'4', // RSA-2048
+		])
+		expect(await packProc.exited).toBe(0)
+		expect(
+			await fs
+				.access(su3Path)
+				.then(() => true)
+				.catch(() => false),
+		).toBe(true)
+
+		// 2. Info
+		const infoProc = Bun.spawn(['node', cliPath, 'info', su3Path], {
+			stdout: 'pipe',
+		})
+		expect(await infoProc.exited).toBe(0)
+		const infoOut = await new Response(infoProc.stdout).text()
+		expect(infoOut).toContain('Signer ID:        test@mail.i2p')
+		expect(infoOut).toContain('Version:          1234')
+		expect(infoOut).toContain('Signature Type:   4 (RSA-SHA256-2048)')
+
+		// 3. Verify
+		const verifyProc = Bun.spawn(
+			['node', cliPath, 'verify', su3Path, certPath],
+			{
+				stdout: 'pipe',
+			},
+		)
+		expect(await verifyProc.exited).toBe(0)
+		const verifyOut = await new Response(verifyProc.stdout).text()
+		expect(verifyOut).toContain('Signature is VALID')
+
+		// 4. Extract
+		const extractProc = Bun.spawn([
+			'node',
+			cliPath,
+			'extract',
+			su3Path,
+			extractedPath,
+		])
+		expect(await extractProc.exited).toBe(0)
+		const extractedText = await fs.readFile(extractedPath, 'utf8')
+		expect(extractedText).toBe('hello world content')
 	})
 })
